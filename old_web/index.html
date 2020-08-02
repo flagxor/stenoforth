@@ -1,0 +1,19 @@
+<!html>
+
+<button id="go">Go</button>
+<script>
+async function Run() {
+  const port = await navigator.serial.requestPort({});
+
+  // Open and begin reading.
+  await port.open({ baudrate: 115200 });
+  const reader = port.readable.getReader();
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    console.log(new TextDecoder('utf-8').decode(value));
+  }
+}
+document.getElementById('go').onclick = Run;
+</script>

@@ -1,0 +1,70 @@
+Dictionary
+----------
+
+Stenoforth:
+   ...      :
+|| name     :
+|  link-----+
+|  advance----+
++--count(1)   |
+   flags(1)   |
+   offset(1)  |
+   enslot(1)  |
+   code   <---+
+   params     |
+|| name       |
+|  link-------+
+|  advance-------+
++--count(1)      |
+   flags(1)      |
+   offset(1)     |
+   enslot(1)     |
+   code          |
+   params        |
+   ...           :
+
+Jupiter Ace:
+   name (marked) ||
++--size           |
+|| link           |
+|| count & flags--+
+|| code
+|| params
+
+EForth:
+   link
+   count & flags--+
+   name          ||
+   code
+   params
+
+Platforms
+---------
+Web
+Linux
+Windows
+OSX
+ESP32
+
+Source Format
+-------------
+Files
+Blocks
+Dictionary Image
+
+Source Storage
+--------------
+Disk / Files -- native and esp32 sdcard
+Origin -- web
+
+from  to
+----  --
+below below -- 0
+below mid   -- delta
+below above -- adjustment
+mid   below -- skip
+mid   mid   -- skip
+mid   above -- skip
+above below -- -adjustment
+above mid   -- delta
+above above -- 0
