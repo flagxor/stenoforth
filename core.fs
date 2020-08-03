@@ -525,8 +525,96 @@ VARIABLE 'EVAL
 : CLS   PAGE ;
 : CLEAR   PAGE ;
 
+: SEE@ ( a -- )
+   SLOT@ 
+   DUP >FLAGS@ REDIRECT-FLAG AND
+   IF
+      <COMPILER
+   THEN
+;
+
+: RAW-#SLOTS ( a -- n ) SEE@ >INLINE-SLOTS C@ ;
+: VARSLOTS? ( a -- f ) RAW-#SLOTS 255 = ;
+: #SLOTS ( a -- n )
+   DUP VARSLOTS?
+   IF
+      SLOT+ L@ ALIGNED SLOT/ 1+
+   ELSE
+      RAW-#SLOTS
+   THEN
+;
+
+
+( Traversal Words )
+( --------------- )
+
+: WORD> ( a -- a ) DUP #SLOTS SLOTS + SLOT+ ;
+
+: SWEEP-ALL-WORDS
+   ( xt -- )
+   FIRST SLOT@
+   BEGIN
+      DUP >ADVANCE >R
+      OVER >R
+      SWAP EXECUTE
+      R> R>
+      DUP 0=
+   UNTIL
+   2DROP
+;
+
+: SWEEP-LINK
+   ( xt xt[traversed] -- xt )
+   >LINK& OVER >R
+   SWAP EXECUTE
+   R>
+;
+
+: SWEEP-ADVANCE
+   ( xt xt[traversed] -- xt )
+   >ADVANCE& OVER >R
+   SWAP EXECUTE
+   R>
+;
+
+: SWEEP-WORD-REFS
+   ( xt xt[traversed] -- xt )
+   DUP WORD-SPAN + >R
+   >PARAMS
+   BEGIN
+      DUP R@ U<
+   WHILE
+      2DUP WORD> >R >R
+      SWAP EXECUTE
+      R> R>
+   REPEAT
+   R> 2DROP
+;
+
+: SWEEP-LINK-AND-WORDS
+   ( xt xt[traversed] -- xt )
+   DUP >R SWEEP-LINK R>
+   DUP >R SWEEP-ADVANCE R>
+   DUP L@ OP_DOCOL =
+   IF
+     SWEEP-WORD-REFS
+   ELSE
+     DROP
+   THEN
+;
+
+: SWEEP-ALL-LINKS
+   ( xt -- )
+   ['] SWEEP-LINK-AND-WORDS SWEEP-ALL-WORDS
+   DROP
+;
+
 ( Utility Words )
 ( ------------- )
+
+: ALL-WORDS
+  CR ['] .ID SWEEP-ALL-WORDS
+;
 
 : WORDS
    CR
@@ -559,26 +647,8 @@ VARIABLE INDENT
 
 : CR-INDENT CR INDENT @ SPACES ;
 
-: SEE@ ( a -- )
-   SLOT@ 
-   DUP >FLAGS@ REDIRECT-FLAG AND
-   IF
-      <COMPILER
-   THEN
-;
-
-: RAW-#SLOTS ( a -- n ) SEE@ >INLINE-SLOTS C@ ;
-: VARSLOTS? ( a -- f ) RAW-#SLOTS 255 = ;
-: #SLOTS ( a -- n )
-   DUP VARSLOTS?
-   IF
-      SLOT+ L@ ALIGNED SLOT/ 1+
-   ELSE
-      RAW-#SLOTS
-   THEN
-;
-
-: SEE> ( a -- a) DUP #SLOTS SLOTS + SLOT+ ;
+( SEE )
+( --- )
 
 : SEE-PROPERTIES ( xt -- )
    BLUE
@@ -599,7 +669,40 @@ VARIABLE INDENT
    NORMAL
 ;
 
-: ;? ( a -- f) SEE@ ['] ; <COMPILER = ;
+: SEE1
+   DUP SEE@
+   DUP >FLAGS@ UNINDENT-BEFORE-FLAG AND
+   IF
+       -INDENT CR-INDENT
+   ELSE
+      DUP >FLAGS@ INDENT-AFTER-FLAG AND
+      IF
+         CR-INDENT
+      THEN
+   THEN
+   DUP >FLAGS@
+   IF
+      BLUE
+   THEN
+   DUP >FLAGS@ HIDDEN-LIST-FLAG AND 0= IF
+      DUP .ID
+   THEN
+   DUP >LISTS IF
+      OVER SLOT+ OVER >LISTS EXECUTE
+   THEN
+   DUP >FLAGS@ INDENT-AFTER-FLAG AND
+   IF
+      +INDENT
+      CR-INDENT
+   ELSE
+      DUP >FLAGS@ UNINDENT-BEFORE-FLAG NEWLINE-FLAG OR AND
+      IF
+         CR-INDENT
+      THEN
+   THEN
+   2DROP
+   NORMAL
+;
 
 : SEE.
    CR
@@ -615,49 +718,11 @@ VARIABLE INDENT
    IF
      DUP L@ . BLUE ." OPCODE " GOLD DUP .ID SEE-PROPERTIES EXIT
    THEN
-   DUP BLUE ." : " GOLD DUP .ID NORMAL
+   BLUE ." : " GOLD DUP .ID NORMAL
    3 INDENT !
    CR-INDENT
-   >PARAMS
-   BEGIN
-      DUP SEE@
-      DUP >FLAGS@ UNINDENT-BEFORE-FLAG AND
-      IF
-        -INDENT CR-INDENT
-      ELSE
-         DUP >FLAGS@ INDENT-AFTER-FLAG AND
-         IF
-            CR-INDENT
-         THEN
-      THEN
-      DUP >FLAGS@
-      IF
-         BLUE
-      THEN
-      DUP >FLAGS@ HIDDEN-LIST-FLAG AND 0= IF
-        DUP .ID
-      THEN
-      DUP >LISTS IF
-        OVER SLOT+ OVER >LISTS EXECUTE
-      THEN
-      DUP >FLAGS@ INDENT-AFTER-FLAG AND
-      IF
-         +INDENT
-         CR-INDENT
-      ELSE
-         DUP >FLAGS@ UNINDENT-BEFORE-FLAG NEWLINE-FLAG OR AND
-         IF
-            CR-INDENT
-         THEN
-      THEN
-      DROP
-      DUP ;?
-      IF
-         DROP NORMAL SEE-PROPERTIES EXIT
-      THEN
-      SEE>
-      NORMAL
-   AGAIN
+   DUP ['] SEE1 SWAP SWEEP-WORD-REFS DROP
+   SEE-PROPERTIES
 ;
 
 : SEE   ' SEE. ;
@@ -681,98 +746,72 @@ VARIABLE INDENT
 : :   TOKEN HEADER OP_DOCOL L, ] ;
 : ;   COMPILER OVERT [ RUNSCODE> EXIT ; IMMEDIATE -TAB
 
+
 ( Revision  Words )
 ( --------------- )
 
 VARIABLE REPLACING
+VARIABLE REPLACING-COMPILER
+VARIABLE REPLACE-WITH
+VARIABLE REPLACE-WITH-COMPILER
 VARIABLE FOUNDATION
 VARIABLE PEAK
-VARIABLE DELTA
 
 : SLOT+! ( n a -- ) SWAP SLOT/ SWAP L+! ;
 
 : ADJUSTMENT ( -- n ) FOUNDATION @ PEAK @ - ;
 
-: REDEFINE1'
+: ADJUST1
    ( a -- )
    DUP L@ 0= IF
       DROP EXIT
    THEN
-   DUP SLOT@ FOUNDATION @ U< IF
-      DUP PEAK @ U< IF
-        DROP EXIT
-      THEN
-      ADJUSTMENT NEGATE SWAP SLOT+!
-      EXIT
+   DUP SLOT@ REPLACING @ = IF
+      REPLACE-WITH @ OVER SLOT+!
    THEN
-   DUP SLOT@ PEAK @ U< IF
-      DELTA @ SWAP SLOT+!
-      EXIT
+   DUP SLOT@ REPLACING-COMPILER @ = IF
+      REPLACE-WITH-COMPILER @ OVER SLOT+!
    THEN
    DUP FOUNDATION @ U< IF
-      ADJUSTMENT SWAP SLOT+!
-   ELSE
-      DROP
+      DUP SLOT@ PEAK @ U< 0= IF
+        ADJUSTMENT SWAP SLOT+! EXIT
+      THEN
    THEN
+   DUP PEAK @ U< 0= IF
+      DUP SLOT@ FOUNDATION @ U< IF
+        ADJUSTMENT NEGATE SWAP SLOT+! EXIT
+      THEN
+   THEN
+   DROP
 ;
 
-: REDEFINE1
-   ( a -- )
-   DUP L@ OP_DOCOL <>
-   IF
-     DROP EXIT
+: SKIP-REPLACEMENT
+   ( xt -- )
+   DUP >ADVANCE REPLACING @ = IF
+      DUP >ADVANCE >ADVANCE SWAP >ADVANCE!
+   ELSE
+      DROP 
    THEN
-   DUP >LINK& REDEFINE1'
-   >PARAMS
-   BEGIN
-      DUP ;? SWAP
-      DUP REDEFINE1'
-      SWAP
-      IF
-         DROP EXIT
-      THEN
-      SEE>
-   AGAIN
 ;
 
 : SETUP-REDEFINE'
    ' REPLACING !
+   REPLACING @ COMPILER> REPLACING-COMPILER !
    REPLACING @ WORD-SPAN OVER + PEAK ! FOUNDATION !
-   LAST SLOT@ REPLACING @ - DELTA !
+   LAST SLOT@ REPLACING @ - REPLACE-WITH !
+   LAST SLOT@ COMPILER> REPLACING @ COMPILER> - REPLACE-WITH-COMPILER !
    CONTEXT SLOT@ >LINK CONTEXT SLOT!
    REPLACING @ >LINK LAST SLOT@ >LINK!
 ;
 
 : REDEFINE
    SETUP-REDEFINE'
-
-   FIRST SLOT@
-   BEGIN
-      DUP REDEFINE1
-      DUP >ADVANCE
-      DUP REPLACING @ = IF
-         2DUP >ADVANCE SWAP >ADVANCE!
-         >ADVANCE
-      THEN
-      SWAP >ADVANCE& REDEFINE1'
-      DUP 0=
-   UNTIL
-   DROP
-
+   ['] SKIP-REPLACEMENT SWEEP-ALL-WORDS
+   ['] ADJUST1 SWEEP-ALL-LINKS
    PEAK @ FOUNDATION @ HERE PEAK @ - CMOVE
    ADJUSTMENT ALLOT
    ADJUSTMENT LAST SLOT+!
    ADJUSTMENT CONTEXT SLOT+!
-;
-
-: SWEEP
-   FIRST SLOT@
-   BEGIN
-      DUP .ID
-      >ADVANCE
-      DUP 0=
-   UNTIL
-   DROP
 ;
 
 : junky ." junky" ;
