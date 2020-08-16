@@ -365,8 +365,7 @@ VARIABLE tmp
 
 : .ID ( a -- ) >NAME TYPE SPACE ;
 
-: FIND ( b u -- xt | b u 0 )
-   CONTEXT SLOT@
+: RAW-FIND ( b u s-xt -- xt | b u 0 )
    BEGIN
      3DUP >NAME NAME= IF >R 2DROP R> EXIT THEN
      >LINK
@@ -375,6 +374,8 @@ VARIABLE tmp
    DROP 0
 ;
 
+: FIND ( b u -- xt | b u 0 ) CONTEXT SLOT@ RAW-FIND ;
+
 : WORD-SPAN ( xt -- a n )
    DUP >NAME DROP SWAP >ADVANCE DUP IF
       >NAME DROP
@@ -382,7 +383,7 @@ VARIABLE tmp
       DROP HERE
    THEN
    OVER -
-; 
+;
 
 ( Compilation Words )
 ( ----------------- )
@@ -526,7 +527,7 @@ VARIABLE 'EVAL
 : CLEAR   PAGE ;
 
 : SEE@ ( a -- )
-   SLOT@ 
+   SLOT@
    DUP >FLAGS@ REDIRECT-FLAG AND
    IF
       <COMPILER
@@ -536,6 +537,9 @@ VARIABLE 'EVAL
 : RAW-#SLOTS ( a -- n ) SEE@ >INLINE-SLOTS C@ ;
 : VARSLOTS? ( a -- f ) RAW-#SLOTS 255 = ;
 : #SLOTS ( a -- n )
+   DUP L@ 0= IF
+     DROP 0 EXIT
+   THEN
    DUP VARSLOTS?
    IF
       SLOT+ L@ ALIGNED SLOT/ 1+
@@ -563,50 +567,39 @@ VARIABLE 'EVAL
    2DROP
 ;
 
-: SWEEP-LINK
-   ( xt xt[traversed] -- xt )
-   >LINK& OVER >R
-   SWAP EXECUTE
-   R>
-;
+VARIABLE LINK-ACTION
 
-: SWEEP-ADVANCE
-   ( xt xt[traversed] -- xt )
-   >ADVANCE& OVER >R
-   SWAP EXECUTE
-   R>
-;
+: DO-LINK LINK-ACTION @ EXECUTE ;
+
+: SWEEP-LINK ( xt -- ) >LINK& DO-LINK ;
+
+: SWEEP-ADVANCE ( xt -- ) >ADVANCE& DO-LINK ;
 
 : SWEEP-WORD-REFS
-   ( xt xt[traversed] -- xt )
+   ( xt -- )
    DUP WORD-SPAN + >R
    >PARAMS
    BEGIN
       DUP R@ U<
    WHILE
-      2DUP WORD> >R >R
-      SWAP EXECUTE
-      R> R>
+      DUP WORD> >R DO-LINK R>
    REPEAT
    R> 2DROP
 ;
 
 : SWEEP-LINK-AND-WORDS
-   ( xt xt[traversed] -- xt )
-   DUP >R SWEEP-LINK R>
-   DUP >R SWEEP-ADVANCE R>
+   ( xt -- )
    DUP L@ OP_DOCOL =
    IF
-     SWEEP-WORD-REFS
-   ELSE
-     DROP
+     DUP >R SWEEP-WORD-REFS R>
    THEN
+   DUP >R SWEEP-ADVANCE R>
+   DUP >R SWEEP-LINK R>
+   DROP
 ;
 
 : SWEEP-ALL-LINKS
-   ( xt -- )
    ['] SWEEP-LINK-AND-WORDS SWEEP-ALL-WORDS
-   DROP
 ;
 
 ( Utility Words )
@@ -670,6 +663,7 @@ VARIABLE INDENT
 ;
 
 : SEE1
+   DUP L@ 0= IF DROP EXIT THEN
    DUP SEE@
    DUP >FLAGS@ UNINDENT-BEFORE-FLAG AND
    IF
@@ -721,7 +715,7 @@ VARIABLE INDENT
    BLUE ." : " GOLD DUP .ID NORMAL
    3 INDENT !
    CR-INDENT
-   DUP ['] SEE1 SWAP SWEEP-WORD-REFS DROP
+   ['] SEE1 LINK-ACTION ! DUP SWEEP-WORD-REFS
    SEE-PROPERTIES
 ;
 
@@ -785,36 +779,73 @@ VARIABLE PEAK
    DROP
 ;
 
-: SKIP-REPLACEMENT
+: FIND-OLD' ( -- xt )
+   TOKEN CONTEXT SLOT@ >LINK RAW-FIND DUP IF EXIT THEN 104 THROW ;
+
+: SETUP-REDEFINE
+   ( check that last = context )
+   LAST SLOT@ CONTEXT SLOT@ <> IF
+      105 THROW
+   THEN
+   ( setup the things we're replacing )
+   FIND-OLD' REPLACING !
+   REPLACING @ COMPILER> REPLACING-COMPILER !
+   ( setup the span of what's moved )
+   REPLACING @ WORD-SPAN OVER + PEAK ! FOUNDATION !
+   ( setup the adjustment to replace old with new )
+   CONTEXT SLOT@ REPLACING @ - REPLACE-WITH !
+   CONTEXT SLOT@ COMPILER> REPLACING @ COMPILER> - REPLACE-WITH-COMPILER !
+;
+
+: DISCONNECT-ADVANCE
    ( xt -- )
    DUP >ADVANCE REPLACING @ = IF
       DUP >ADVANCE >ADVANCE SWAP >ADVANCE!
    ELSE
-      DROP 
+      DROP
    THEN
 ;
 
-: SETUP-REDEFINE'
-   ' REPLACING !
-   REPLACING @ COMPILER> REPLACING-COMPILER !
-   REPLACING @ WORD-SPAN OVER + PEAK ! FOUNDATION !
-   LAST SLOT@ REPLACING @ - REPLACE-WITH !
-   LAST SLOT@ COMPILER> REPLACING @ COMPILER> - REPLACE-WITH-COMPILER !
+: DISCONNECT-LINK
+   ( xt -- )
+   DUP >LINK REPLACING @ = IF
+      ( connect replacing to old link of replaced )
+      REPLACING @ >LINK LAST SLOT@ >LINK!
+
+      REPLACE-WITH @ SWAP >LINK& SLOT+!
+   ELSE
+      DROP
+   THEN
+;
+
+: REPLACEMENT-RELINK
+   ( remove the most recent definition in this vocabulary )
    CONTEXT SLOT@ >LINK CONTEXT SLOT!
-   REPLACING @ >LINK LAST SLOT@ >LINK!
+   ( disconnect link )
+   ['] DISCONNECT-LINK SWEEP-ALL-WORDS
+   ( make last match context )
+   CONTEXT SLOT@ LAST SLOT!
+
+   ( disconnect advance )
+   ['] DISCONNECT-ADVANCE SWEEP-ALL-WORDS
+
+   ( blank removed word )
+   FOUNDATION @ PEAK @ FOUNDATION @ - 0 FILL
 ;
 
 : REDEFINE
-   SETUP-REDEFINE'
-   ['] SKIP-REPLACEMENT SWEEP-ALL-WORDS
-   ['] ADJUST1 SWEEP-ALL-LINKS
+   SETUP-REDEFINE
+   REPLACEMENT-RELINK
+
+   ['] ADJUST1 LINK-ACTION ! SWEEP-ALL-LINKS
    PEAK @ FOUNDATION @ HERE PEAK @ - CMOVE
    ADJUSTMENT ALLOT
    ADJUSTMENT LAST SLOT+!
    ADJUSTMENT CONTEXT SLOT+!
 ;
 
-: junky ." junky" ;
+: junky1 emit emit ." junky" emit ;
+: junky emit emit ." junky" emit ;
 : foo ." hello" ;
 : bar cr foo foo ;
 : junk ." junk" cr ;
