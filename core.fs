@@ -851,9 +851,3 @@ VARIABLE PEAK
    TRIM-OLD
 ;
 
-: junky1 emit emit ." junky" emit ;
-: junky emit emit ." junky" emit ;
-: foo ." hello" ;
-: bar cr foo foo ;
-: junk ." junk" cr ;
-: baz ." there" cr ;
