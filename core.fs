@@ -571,10 +571,6 @@ VARIABLE LINK-ACTION
 
 : DO-LINK LINK-ACTION @ EXECUTE ;
 
-: SWEEP-LINK ( xt -- ) >LINK& DO-LINK ;
-
-: SWEEP-ADVANCE ( xt -- ) >ADVANCE& DO-LINK ;
-
 : SWEEP-WORD-REFS
    ( xt -- )
    DUP WORD-SPAN + >R
@@ -585,21 +581,6 @@ VARIABLE LINK-ACTION
       DUP WORD> >R DO-LINK R>
    REPEAT
    R> 2DROP
-;
-
-: SWEEP-LINK-AND-WORDS
-   ( xt -- )
-   DUP L@ OP_DOCOL =
-   IF
-     DUP >R SWEEP-WORD-REFS R>
-   THEN
-   DUP >R SWEEP-ADVANCE R>
-   DUP >R SWEEP-LINK R>
-   DROP
-;
-
-: SWEEP-ALL-LINKS
-   ['] SWEEP-LINK-AND-WORDS SWEEP-ALL-WORDS
 ;
 
 ( Utility Words )
@@ -757,7 +738,7 @@ VARIABLE PEAK
 
 : ADJUST1
    ( a -- )
-   DUP L@ 0= IF
+   DUP SLOT@ 0= IF
       DROP EXIT
    THEN
    DUP SLOT@ REPLACING @ = IF
@@ -809,39 +790,65 @@ VARIABLE PEAK
 : DISCONNECT-LINK
    ( xt -- )
    DUP >LINK REPLACING @ = IF
-      ( connect replacing to old link of replaced )
-      REPLACING @ >LINK LAST SLOT@ >LINK!
-
-      REPLACE-WITH @ SWAP >LINK& SLOT+!
+      LAST SLOT@ SWAP >LINK!
    ELSE
       DROP
    THEN
 ;
 
+: ADJUST-LINK&ADVANCE
+   ( xt -- )
+   DUP >LINK& ADJUST1
+   >ADVANCE& ADJUST1
+;
+
 : REPLACEMENT-RELINK
-   ( remove the most recent definition in this vocabulary )
-   CONTEXT SLOT@ >LINK CONTEXT SLOT!
+   ( word-after-replaced )
+   REPLACING @ >LINK
+   ( word-after-last )
+   CONTEXT SLOT@ >LINK
    ( disconnect link )
    ['] DISCONNECT-LINK SWEEP-ALL-WORDS
+   ( connect to prior word as last )
+   CONTEXT SLOT!
+   ( connect replacement word to word after replaced )
+   LAST SLOT@ >LINK!
    ( make last match context )
    CONTEXT SLOT@ LAST SLOT!
 
    ( disconnect advance )
    ['] DISCONNECT-ADVANCE SWEEP-ALL-WORDS
+   ( adjust advance and link )
+   ['] ADJUST-LINK&ADVANCE SWEEP-ALL-WORDS
+;
 
-   ( blank removed word )
-   FOUNDATION @ PEAK @ FOUNDATION @ - 0 FILL
+: ADJUST-COLON-WORD
+   ( xt -- )
+   DUP L@ OP_DOCOL =
+   IF
+      ['] ADJUST1 LINK-ACTION !
+      SWEEP-WORD-REFS
+   ELSE
+      DROP
+   THEN
+;
+
+: ADJUST-COLON-WORDS
+   ['] ADJUST-COLON-WORD SWEEP-ALL-WORDS
+;
+
+: TRIM-OLD
+   LAST ADJUST1
+   CONTEXT ADJUST1
+   PEAK @ FOUNDATION @ HERE PEAK @ - CMOVE
+   ADJUSTMENT ALLOT
 ;
 
 : REDEFINE
    SETUP-REDEFINE
+   ADJUST-COLON-WORDS
    REPLACEMENT-RELINK
-
-   ['] ADJUST1 LINK-ACTION ! SWEEP-ALL-LINKS
-   PEAK @ FOUNDATION @ HERE PEAK @ - CMOVE
-   ADJUSTMENT ALLOT
-   ADJUSTMENT LAST SLOT+!
-   ADJUSTMENT CONTEXT SLOT+!
+   TRIM-OLD
 ;
 
 : junky1 emit emit ." junky" emit ;
