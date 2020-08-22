@@ -729,6 +729,7 @@ VARIABLE REPLACING
 VARIABLE REPLACING-COMPILER
 VARIABLE REPLACE-WITH
 VARIABLE REPLACE-WITH-COMPILER
+VARIABLE REPLACEMENT
 VARIABLE FOUNDATION
 VARIABLE PEAK
 
@@ -764,10 +765,8 @@ VARIABLE PEAK
    TOKEN CONTEXT SLOT@ >LINK RAW-FIND DUP IF EXIT THEN 104 THROW ;
 
 : SETUP-REDEFINE
-   ( check that last = context )
-   LAST SLOT@ CONTEXT SLOT@ <> IF
-      105 THROW
-   THEN
+   ( use latest word in context as replacement )
+   CONTEXT SLOT@ REPLACEMENT !
    ( setup the things we're replacing )
    FIND-OLD' REPLACING !
    REPLACING @ COMPILER> REPLACING-COMPILER !
@@ -790,7 +789,7 @@ VARIABLE PEAK
 : DISCONNECT-LINK
    ( xt -- )
    DUP >LINK REPLACING @ = IF
-      LAST SLOT@ SWAP >LINK!
+      REPLACEMENT @ SWAP >LINK!
    ELSE
       DROP
    THEN
@@ -800,6 +799,14 @@ VARIABLE PEAK
    ( xt -- )
    DUP >LINK& ADJUST1
    >ADVANCE& ADJUST1
+;
+
+: FIND-LAST
+   ( xt -- )
+   DUP 0= IF
+      EXIT
+   THEN
+   SWAP DROP
 ;
 
 : REPLACEMENT-RELINK
@@ -812,9 +819,9 @@ VARIABLE PEAK
    ( connect to prior word as last )
    CONTEXT SLOT!
    ( connect replacement word to word after replaced )
-   LAST SLOT@ >LINK!
-   ( make last match context )
-   CONTEXT SLOT@ LAST SLOT!
+   REPLACEMENT @ >LINK!
+   ( recompute last )
+   0 ['] FIND-LAST SWEEP-ALL-WORDS LAST SLOT!
 
    ( disconnect advance )
    ['] DISCONNECT-ADVANCE SWEEP-ALL-WORDS

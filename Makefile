@@ -108,5 +108,8 @@ $(OBJ)/boot.c: $(OBJ)/boot.dat | $(OBJ)
 clean:
 	rm -rf $(OUT)
 
+test: $(OUT)/stenoforth
+	./test.sh
+
 # objcopy -O binary -j .forth out/stenoforth.exe boot.out
 # objcopy --update-section .forth=alternate out/stenoforth.exe out/revised.exe

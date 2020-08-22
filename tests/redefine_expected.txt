@@ -1,0 +1,14 @@
+StenoForth 1.0
+0 0 0 0 ok> : star 44 emit ;
+0 0 0 0 ok> star,
+0 0 0 0 ok> : test 10 for star next ;
+0 0 0 0 ok> test,,,,,,,,,,,
+0 0 0 0 ok> : star 43 emit ;
+0 0 0 0 ok> test,,,,,,,,,,,
+0 0 0 0 ok> redefine star
+0 0 0 0 ok> test+++++++++++
+0 0 0 0 ok> : asterix 42 emit ;
+0 0 0 0 ok> test+++++++++++
+0 0 0 0 ok> redefine star
+0 0 0 0 ok> test***********
+0 0 0 0 ok> bye
